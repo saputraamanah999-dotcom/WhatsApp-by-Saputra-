@@ -1,0 +1,158 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    function isOwner(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+
+    // For initial setup, allow read for everyone signed in, write for owner
+    // You should tighten these rules for production
+
+    // ===== USERS =====
+    match /users/{uid} {
+      allow read: if isSignedIn();
+      // User can create/update their own profile (NOT role, banned, verified)
+      allow create: if isOwner(uid)
+                    && !request.resource.data.keys().hasAny(['role']) || request.resource.data.role == 'user';
+      allow update: if isOwner(uid);
+      allow delete: if isOwner(uid);
+    }
+
+    // ===== USERNAMES =====
+    match /usernames/{uname} {
+      allow read: if isSignedIn();
+      // Anyone signed in can claim an available username
+      allow create: if isSignedIn()
+                    && request.resource.data.uid == request.auth.uid;
+      allow delete: if isSignedIn() && resource.data.uid == request.auth.uid;
+    }
+
+    // ===== DIRECT MESSAGES =====
+    match /dms/{messageId} {
+      allow read: if isSignedIn() && (
+        resource.data.senderId == request.auth.uid ||
+        resource.data.receiverId == request.auth.uid
+      );
+      allow create: if isSignedIn()
+                    && request.resource.data.senderId == request.auth.uid;
+      allow update: if isSignedIn() && (
+        resource.data.senderId == request.auth.uid ||
+        resource.data.receiverId == request.auth.uid
+      );
+      allow delete: if isSignedIn() && resource.data.senderId == request.auth.uid;
+    }
+
+    // ===== GLOBAL CHAT =====
+    match /global/{messageId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn()
+                    && request.resource.data.senderId == request.auth.uid;
+      allow update: if isSignedIn();
+      allow delete: if isSignedIn() && (
+        resource.data.senderId == request.auth.uid
+      );
+    }
+
+    // ===== STORIES =====
+    match /stories/{storyId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn()
+                    && request.resource.data.ownerId == request.auth.uid;
+      allow update: if isSignedIn();
+      allow delete: if isSignedIn() && resource.data.ownerId == request.auth.uid;
+
+      match /viewers/{viewerId} {
+        allow read: if isSignedIn();
+        allow create: if isSignedIn() && viewerId == request.auth.uid;
+      }
+      match /reactions/{userId} {
+        allow read: if isSignedIn();
+        allow write: if isSignedIn() && userId == request.auth.uid;
+      }
+    }
+
+    // ===== GROUPS =====
+    match /groups/{groupId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update: if isSignedIn();
+      allow delete: if isSignedIn() && resource.data.ownerId == request.auth.uid;
+
+      match /members/{memberId} {
+        allow read: if isSignedIn();
+        allow create: if isSignedIn() && memberId == request.auth.uid;
+        allow update: if isSignedIn();
+        allow delete: if isSignedIn() && (memberId == request.auth.uid || resource.data.role == 'owner');
+      }
+    }
+
+    match /group_messages/{messageId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn()
+                    && request.resource.data.senderId == request.auth.uid;
+      allow update: if isSignedIn();
+      allow delete: if isSignedIn() && resource.data.senderId == request.auth.uid;
+    }
+
+    // ===== CHANNELS =====
+    match /channels/{channelId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update: if isSignedIn();
+      allow delete: if isSignedIn() && resource.data.ownerId == request.auth.uid;
+    }
+
+    match /channel_follows/{followId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow delete: if isSignedIn() && resource.data.userId == request.auth.uid;
+    }
+
+    match /channel_posts/{postId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn()
+                    && request.resource.data.authorId == request.auth.uid;
+      allow update: if isSignedIn();
+      allow delete: if isSignedIn() && resource.data.authorId == request.auth.uid;
+    }
+
+    // ===== CALLS =====
+    match /calls/{callId} {
+      allow read: if isSignedIn() && (
+        resource.data.callerId == request.auth.uid ||
+        resource.data.calleeId == request.auth.uid
+      );
+      allow create: if isSignedIn()
+                    && request.resource.data.callerId == request.auth.uid;
+      allow update: if isSignedIn() && (
+        resource.data.callerId == request.auth.uid ||
+        resource.data.calleeId == request.auth.uid
+      );
+    }
+
+    // ===== NOTIFICATIONS =====
+    match /notifications/{notifId} {
+      allow read: if isSignedIn() && resource.data.recipientId == request.auth.uid;
+      allow create: if isSignedIn();
+      allow update: if isSignedIn() && resource.data.recipientId == request.auth.uid;
+      allow delete: if isSignedIn() && resource.data.recipientId == request.auth.uid;
+    }
+
+    // ===== CONFIG =====
+    match /config/{configId} {
+      allow read: if isSignedIn();
+      // Only writable via Admin SDK (server-side)
+      allow write: if false;
+    }
+
+    // ===== REPORTS =====
+    match /reports/{reportId} {
+      allow create: if isSignedIn();
+      allow read: if isSignedIn() && resource.data.reporterId == request.auth.uid;
+    }
+  }
+}

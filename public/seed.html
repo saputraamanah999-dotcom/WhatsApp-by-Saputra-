@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Seeder Firestore — Neobrutal Chat</title>
+<script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+<style>
+* { box-sizing: border-box; margin: 0; font-family: 'Space Grotesk', system-ui, -apple-system, sans-serif; }
+:root {
+  --nb-purple: #8b5cf6;
+  --nb-pink: #ff4d8d;
+  --nb-yellow: #ffe94d;
+  --nb-cyan: #7ef9ee;
+  --nb-green: #5cf29a;
+  --nb-blue: #6ab7ff;
+  --nb-red: #ff5c5c;
+  --nb-orange: #ffb74d;
+  --border: #111;
+  --shadow: 4px 4px 0 #111;
+  --shadow-sm: 2px 2px 0 #111;
+}
+body {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: var(--nb-purple);
+  background-image: radial-gradient(rgba(255,255,255,0.3) 2px, transparent 2px);
+  background-size: 22px 22px;
+}
+.card {
+  width: min(94vw, 600px);
+  background: #fffdf5;
+  border: 3px solid var(--border);
+  border-radius: 14px;
+  box-shadow: var(--shadow);
+  padding: 30px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+h1 {
+  font-size: 26px;
+  font-weight: 800;
+  color: #1a1aff;
+  letter-spacing: -0.5px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+p { color: #4b4b4b; font-size: 14px; line-height: 1.5; }
+label { font-weight: 700; font-size: 13px; display: block; margin-bottom: 4px; }
+input, textarea {
+  width: 100%;
+  padding: 12px 14px;
+  border: 2.5px solid var(--border);
+  border-radius: 10px;
+  box-shadow: var(--shadow-sm);
+  font-size: 15px;
+  font-weight: 500;
+  outline: none;
+  background: #fff;
+  font-family: inherit;
+}
+input:focus, textarea:focus {
+  transform: translate(-1px, -1px);
+  box-shadow: var(--shadow);
+}
+.btn {
+  padding: 12px 18px;
+  border: 2.5px solid var(--border);
+  border-radius: 10px;
+  box-shadow: var(--shadow-sm);
+  font-weight: 700;
+  font-size: 15px;
+  cursor: pointer;
+  transition: transform 0.12s, box-shadow 0.12s;
+  background: var(--nb-yellow);
+  color: #111;
+}
+.btn:hover { transform: translate(-2px, -2px); box-shadow: var(--shadow); }
+.btn:active { transform: translate(2px, 2px); box-shadow: 0 0 0 #111; }
+.btn.primary { background: var(--nb-purple); color: #fff; }
+.btn.cyan { background: var(--nb-cyan); }
+.btn.green { background: var(--nb-green); }
+.btn.pink { background: var(--nb-pink); color: #fff; }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+pre {
+  background: #111;
+  color: #5cf29a;
+  border-radius: 10px;
+  padding: 14px;
+  font-size: 12.5px;
+  line-height: 1.6;
+  min-height: 200px;
+  max-height: 350px;
+  overflow-y: auto;
+  border: 2.5px solid var(--border);
+  white-space: pre-wrap;
+  font-family: 'Courier New', monospace;
+}
+.row { display: flex; gap: 8px; }
+.row > * { flex: 1; }
+.emoji { font-size: 28px; }
+.grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>🔥 Seeder Firestore — Neobrutal Chat</h1>
+  <p>Halaman terpisah khusus developer. Membuat data awal (config banner, welcome message) ke Firebase Firestore Anda. Aman dijalankan berulang kali (idempotent).</p>
+  <p style="background: var(--nb-yellow); padding: 8px 12px; border-radius: 8px; border: 2px solid var(--border); font-weight: 600;">
+    ⚠️ Untuk memberikan role Superadmin ke akun Anda, gunakan API endpoint <code>/api/auth/firebase</code> dengan action register — akun pertama otomatis jadi Superadmin.
+  </p>
+
+  <label for="em">Email Developer (akun pertama yang sudah diregister)</label>
+  <input id="em" type="email" placeholder="admin@example.com">
+
+  <label for="pw">Password Developer</label>
+  <input id="pw" type="password" placeholder="Password" onkeydown="if(event.key=='Enter')run()">
+
+  <div class="row">
+    <button class="btn primary" id="go" onclick="run()">🚀 Run Seeder</button>
+    <button class="btn cyan" onclick="testConnection()">📡 Test Connection</button>
+  </div>
+
+  <pre id="log">Menunggu... Klik "Run Seeder" untuk mulai.</pre>
+</div>
+
+<script>
+// Firebase config — sesuaikan dengan project Firebase Anda
+const firebaseConfig = {
+  apiKey: "AIzaSyDrAYKLg_Go-UiqB3tmQbHEudQXYzKm3s0",
+  authDomain: "projekwhattsaf.firebaseapp.com",
+  projectId: "projekwhattsaf",
+  storageBucket: "projekwhattsaf.firebasestorage.app",
+  messagingSenderId: "431649153198",
+  appId: "1:431649153198:web:bd08dc5ef06f6c44300d3f",
+  measurementId: "G-V61QGJ8BW2"
+};
+
+firebase.initializeApp(firebaseConfig);
+const auth = firebase.auth();
+const db = firebase.firestore();
+
+const $ = (id) => document.getElementById(id);
+const L = (t) => { $('log').textContent += '\n> ' + t; $('log').scrollTop = $('log').scrollHeight; };
+const log = (t) => { $('log').textContent += '\n' + t; $('log').scrollTop = $('log').scrollHeight; };
+
+function clearLog() {
+  $('log').textContent = '';
+}
+
+async function testConnection() {
+  clearLog();
+  L('Test connection...');
+  try {
+    const snap = await db.collection('users').limit(1).get();
+    log('✅ Firestore connection OK. Total users found: ' + snap.size);
+    if (!snap.empty) {
+      log('First user: ' + JSON.stringify(snap.docs[0].data(), null, 2));
+    } else {
+      log('⚠️ Belum ada user. Register akun pertama di aplikasi untuk jadi Superadmin.');
+    }
+  } catch (e) {
+    log('❌ Error: ' + e.message);
+    log('Pastikan Firestore di-enable di Firebase Console Anda.');
+  }
+}
+
+async function run() {
+  clearLog();
+  const email = $('em').value.trim();
+  const password = $('pw').value;
+  if (!email || !password) {
+    log('❌ Email dan password wajib diisi.');
+    return;
+  }
+  $('go').disabled = true;
+  L('Signing in...');
+
+  try {
+    // 1. Sign in
+    const cred = await auth.signInWithEmailAndPassword(email, password);
+    log('✅ Login sebagai ' + cred.user.email);
+    const uid = cred.user.uid;
+    const username = (cred.user.displayName || email.split('@')[0]).toLowerCase();
+
+    // 2. Pastikan user doc ada
+    const userRef = db.collection('users').doc(uid);
+    const userDoc = await userRef.get();
+    if (!userDoc.exists) {
+      await userRef.set({
+        email: cred.user.email,
+        username,
+        displayName: username,
+        bio: '',
+        photoURL: null,
+        role: 'superadmin',
+        banned: false,
+        verified: true,
+        online: true,
+        lastSeen: Date.now(),
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+      log('✅ Created user doc with role=superadmin');
+      // Add username doc
+      await db.collection('usernames').doc(username).set({
+        uid: uid,
+        createdAt: Date.now(),
+      });
+      log('✅ Reserved username: ' + username);
+    } else {
+      // Update ke superadmin jika belum
+      const userData = userDoc.data();
+      if (userData.role !== 'superadmin') {
+        await userRef.update({ role: 'superadmin', verified: true });
+        log('✅ Updated role to superadmin');
+      } else {
+        log('ℹ️ User sudah superadmin');
+      }
+      log('User: ' + JSON.stringify(userData, null, 2));
+    }
+
+    // 3. Seed config/banner (non-aktif default)
+    const bannerRef = db.collection('config').doc('banner');
+    const bannerDoc = await bannerRef.get();
+    if (!bannerDoc.exists) {
+      await bannerRef.set({
+        text: 'Selamat datang di Neobrutal Chat! 🎨',
+        active: false,
+        kind: 'info',
+        updatedAt: Date.now(),
+      });
+      log('✅ Seeded config/banner (inactive)');
+    } else {
+      log('ℹ️ config/banner already exists');
+    }
+
+    // 4. Seed welcome notification
+    const notifRef = db.collection('notifications').doc('seed_welcome_' + uid);
+    const notifDoc = await notifRef.get();
+    if (!notifDoc.exists) {
+      await notifRef.set({
+        recipientId: uid,
+        actorId: 'system',
+        type: 'welcome',
+        text: '🎉 Selamat datang di Neobrutal Chat! Mulai chat dengan teman atau buka Chat Global.',
+        read: false,
+        createdAt: Date.now(),
+      });
+      log('✅ Seeded welcome notification');
+    } else {
+      log('ℹ️ Welcome notification already exists');
+    }
+
+    // 5. Welcome message di global chat (cuma jika kosong)
+    const globalSnap = await db.collection('global').limit(1).get();
+    if (globalSnap.empty) {
+      await db.collection('global').add({
+        senderId: uid,
+        senderUsername: username,
+        text: 'Halo semua! 👋 Selamat datang di Chat Global Neobrutal Chat!',
+        type: 'text',
+        mediaURL: null,
+        replyToId: null,
+        reactions: '{}',
+        pinned: true,
+        createdAt: Date.now(),
+      });
+      log('✅ Seeded welcome message in global chat');
+    } else {
+      log('ℹ️ Global chat already has messages');
+    }
+
+    log('\n=========================================');
+    log('🎉 SEEDER SELESAI!');
+    log('=========================================');
+    log('Akun Anda sekarang memiliki role Superadmin.');
+    log('Buka aplikasi di http://localhost:3000 (atau preview URL) untuk login.');
+  } catch (e) {
+    log('\n❌ GAGAL: ' + e.message);
+    if (e.code) log('Error code: ' + e.code);
+    log('Pastikan:');
+    log('1. Email & password benar');
+    log('2. Email sudah terverifikasi (jika email verification diaktifkan)');
+    log('3. Akun sudah diregister lewat aplikasi');
+  }
+  $('go').disabled = false;
+}
+</script>
+</body>
+</html>

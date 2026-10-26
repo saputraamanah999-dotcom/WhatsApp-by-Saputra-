@@ -1,0 +1,353 @@
+// Prisma schema for Neobrutalism WhatsApp-style social chat platform
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String   @id @default(cuid())
+  email         String   @unique
+  username      String   @unique
+  displayName   String?
+  bio           String?
+  photoURL      String?
+  passwordHash  String
+  banned        Boolean  @default(false)
+  verified      Boolean  @default(false)
+  role          String   @default("user") // user | admin | superadmin
+  online        Boolean  @default(false)
+  lastSeen      DateTime @default(now())
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  sentMessages     Message[]     @relation("SentMessages")
+  receivedMessages Message[]     @relation("ReceivedMessages")
+  globalMessages    GlobalMessage[]
+  stories          Story[]
+  storyViews       StoryView[]
+  storyReactions   StoryReaction[]
+  ownedGroups      Group[]       @relation("OwnedGroups")
+  groupMemberships GroupMember[]
+  groupMessages    GroupMessage[]
+  ownedChannels    Channel[]     @relation("OwnedChannels")
+  channelFollows   ChannelFollow[]
+  channelPosts     ChannelPost[]
+  callsInitiated   Call[]        @relation("InitiatedCalls")
+  callsReceived    Call[]        @relation("ReceivedCalls")
+  notifications    Notification[]
+  reportsFiled     Report[]      @relation("ReporterReports")
+  reportsAgainst   Report[]      @relation("TargetReports")
+  auditLogs        AuditLog[]
+  sessions         Session[]
+  accounts         Account[]
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// ============ DIRECT MESSAGES ============
+model Message {
+  id          String   @id @default(cuid())
+  chatId      String   // sorted pair: uidA_uidB
+  senderId    String
+  receiverId  String
+  text        String
+  type        String   @default("text") // text | image | video | audio | voice | document | system
+  mediaURL    String?
+  mediaType   String?
+  mediaSize   Int?
+  thumbnail   String?
+  replyToId   String?
+  forwardedFrom String?
+  status      String   @default("sent") // sent | delivered | read
+  reactions   String   @default("{}") // JSON: { "👍": ["uid1","uid2"], ... }
+  editedAt    DateTime?
+  deletedAt   DateTime?
+  createdAt   DateTime @default(now())
+
+  sender   User @relation("SentMessages", fields: [senderId], references: [id], onDelete: Cascade)
+  receiver User @relation("ReceivedMessages", fields: [receiverId], references: [id], onDelete: Cascade)
+
+  @@index([chatId, createdAt])
+  @@index([senderId])
+  @@index([receiverId])
+}
+
+// ============ GLOBAL CHAT ============
+model GlobalMessage {
+  id         String   @id @default(cuid())
+  senderId   String
+  text       String
+  type       String   @default("text")
+  mediaURL   String?
+  replyToId  String?
+  reactions  String   @default("{}")
+  pinned     Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  sender  User   @relation(fields: [senderId], references: [id], onDelete: Cascade)
+
+  @@index([createdAt])
+}
+
+// ============ STORIES ============
+model Story {
+  id         String   @id @default(cuid())
+  ownerId    String
+  type       String   @default("text") // text | image | video
+  text       String?
+  mediaURL   String?
+  bg         String?
+  duration   Int      @default(5)
+  audience   String   @default("all") // all | contacts | specific
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+
+  owner     User           @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  viewers   StoryView[]
+  reactions StoryReaction[]
+
+  @@index([expiresAt])
+}
+
+model StoryView {
+  id        String   @id @default(cuid())
+  storyId   String
+  viewerId  String
+  createdAt DateTime @default(now())
+
+  story  Story @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  viewer User  @relation(fields: [viewerId], references: [id], onDelete: Cascade)
+
+  @@unique([storyId, viewerId])
+}
+
+model StoryReaction {
+  id        String   @id @default(cuid())
+  storyId   String
+  userId    String
+  emoji     String
+  createdAt DateTime @default(now())
+
+  story Story @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([storyId, userId])
+}
+
+// ============ GROUPS ============
+model Group {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  photoURL    String?
+  ownerId     String
+  visibility  String   @default("public") // public | private
+  joinPolicy  String   @default("open") // open | approval
+  inviteCode  String?
+  memberCount Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  owner      User           @relation("OwnedGroups", fields: [ownerId], references: [id])
+  members    GroupMember[]
+  messages   GroupMessage[]
+
+  @@index([visibility])
+}
+
+model GroupMember {
+  id       String @id @default(cuid())
+  groupId  String
+  userId   String
+  role     String @default("member") // owner | admin | member
+  joinedAt DateTime @default(now())
+
+  group Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([groupId, userId])
+}
+
+model GroupMessage {
+  id         String   @id @default(cuid())
+  groupId    String
+  senderId   String
+  text       String
+  type       String   @default("text")
+  mediaURL   String?
+  replyToId  String?
+  reactions  String   @default("{}")
+  createdAt  DateTime @default(now())
+
+  group   Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  sender  User  @relation(fields: [senderId], references: [id], onDelete: Cascade)
+
+  @@index([groupId, createdAt])
+}
+
+// ============ CHANNELS ============
+model Channel {
+  id          String   @id @default(cuid())
+  name        String
+  slug        String   @unique
+  description String?
+  photoURL    String?
+  ownerId     String
+  visibility  String   @default("public")
+  followerCount Int    @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  owner    User            @relation("OwnedChannels", fields: [ownerId], references: [id])
+  follows  ChannelFollow[]
+  posts    ChannelPost[]
+
+  @@index([visibility])
+}
+
+model ChannelFollow {
+  id        String   @id @default(cuid())
+  channelId String
+  userId    String
+  createdAt DateTime @default(now())
+
+  channel Channel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([channelId, userId])
+}
+
+model ChannelPost {
+  id         String   @id @default(cuid())
+  channelId  String
+  authorId   String
+  text       String
+  mediaURL   String?
+  mediaType  String?
+  pinned     Boolean  @default(false)
+  viewCount  Int      @default(0)
+  reactions  String   @default("{}")
+  createdAt  DateTime @default(now())
+
+  channel Channel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  author  User    @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@index([channelId, createdAt])
+}
+
+// ============ CALLS ============
+model Call {
+  id         String   @id @default(cuid())
+  callerId   String
+  calleeId   String
+  callType   String   @default("voice") // voice | video
+  status     String   @default("ringing") // ringing | active | ended | missed | rejected | failed
+  startedAt  DateTime?
+  endedAt    DateTime?
+  durationSeconds Int?
+  failureReason String?
+  createdAt  DateTime @default(now())
+
+  caller User @relation("InitiatedCalls", fields: [callerId], references: [id], onDelete: Cascade)
+  callee User @relation("ReceivedCalls", fields: [calleeId], references: [id], onDelete: Cascade)
+
+  @@index([calleeId, status])
+  @@index([callerId])
+}
+
+// ============ NOTIFICATIONS ============
+model Notification {
+  id         String   @id @default(cuid())
+  recipientId String
+  actorId     String?
+  type        String // message | mention | reaction | call | story | group_invite | admin
+  targetType  String? // chat | story | group | channel | user
+  targetId    String?
+  text        String
+  read        Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  recipient User @relation(fields: [recipientId], references: [id], onDelete: Cascade)
+
+  @@index([recipientId, read])
+  @@index([createdAt])
+}
+
+// ============ REPORTS / MODERATION ============
+model Report {
+  id         String   @id @default(cuid())
+  reporterId  String
+  targetType  String // user | message | story | group | channel
+  targetId    String
+  reason      String
+  description String?
+  status      String   @default("open") // open | reviewing | resolved | dismissed
+  assignedTo  String?
+  resolution  String?
+  createdAt   DateTime @default(now())
+  resolvedAt  DateTime?
+
+  reporter User @relation("ReporterReports", fields: [reporterId], references: [id], onDelete: Cascade)
+  target   User  @relation("TargetReports", fields: [targetId], references: [id], onDelete: Cascade)
+
+  @@index([status])
+}
+
+// ============ AUDIT LOGS ============
+model AuditLog {
+  id         String   @id @default(cuid())
+  actorId    String
+  action     String
+  targetType String?
+  targetId   String?
+  reason     String?
+  metadata   String?
+  createdAt  DateTime @default(now())
+
+  actor User @relation(fields: [actorId], references: [id], onDelete: Cascade)
+
+  @@index([createdAt])
+}
+
+// ============ CONFIG ============
+model AppConfig {
+  id    String @id
+  key   String @unique
+  value String
+}

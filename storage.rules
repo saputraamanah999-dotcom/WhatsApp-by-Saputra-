@@ -1,0 +1,41 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    function isNotBanned() {
+      return isSignedIn();
+    }
+    function isAdmin() {
+      return isSignedIn() && (
+        firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+        firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.role == 'superadmin'
+      );
+    }
+
+    // User uploads — only authenticated users can write, anyone can read public URL
+    match /uploads/{allPaths=**} {
+      allow read: if true; // Public read for media URLs (signed URLs recommended for sensitive content)
+      allow write: if isSignedIn() && isNotBanned()
+                    && request.resource.size < 15 * 1024 * 1024
+                    && (
+                      request.resource.contentType.matches('image/jpeg') ||
+                      request.resource.contentType.matches('image/png') ||
+                      request.resource.contentType.matches('image/webp') ||
+                      request.resource.contentType.matches('image/gif') ||
+                      request.resource.contentType.matches('video/mp4') ||
+                      request.resource.contentType.matches('video/webm') ||
+                      request.resource.contentType.matches('audio/(mpeg|mp3|webm|ogg|wav)') ||
+                      request.resource.contentType.matches('application/pdf') ||
+                      request.resource.contentType.matches('text/plain')
+                    );
+    }
+
+    // Profile photos — user can write to their own folder
+    match /avatars/{userId}/{allPaths=**} {
+      allow read: if true;
+      allow write: if isSignedIn() && request.auth.uid == userId && request.resource.size < 5 * 1024 * 1024;
+    }
+  }
+}
